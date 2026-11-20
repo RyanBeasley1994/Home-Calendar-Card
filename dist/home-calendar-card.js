@@ -8,7 +8,7 @@
  * https://github.com/mimikm/Home-Calendar-Card
  */
 
-const CARD_VERSION = "1.20.2-beta.5";
+const CARD_VERSION = "1.21.0";
 
 // Literal, complete names at the start only; longest names take precedence.
 function titlePersons(summary, configured) {
