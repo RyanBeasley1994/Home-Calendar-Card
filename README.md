@@ -178,7 +178,7 @@ max_height: 640px
 | `show_countdowns` | boolean | `true` | Show the countdown strip – see *Appearance* |
 | `countdown_style` | `cards` \| `compact` | `cards` | `compact` = one slim row of pills |
 | `countdown_size` | number (%) | `100` | Countdown size, 50–150 |
-| `event_size` | number (%) | `100` | Day & event size, 80–160 – bigger, taller day boxes |
+| `event_size` | number (%) | `100` | Day & event size, 80–160 – bigger, taller day boxes (in the timeline week: taller hours and bigger event text) |
 | `countdown_colors` | map \| `calendar` | theme colours | Override countdown colours (see *Countdown colours*), or `calendar` to use each calendar's colour |
 | `event_types` | list | built-in five | Types offered in the add-event dropdown – see *Event types* |
 | `default_event_type` | string | `standard` | Type pre-selected when adding an event |
@@ -243,6 +243,7 @@ max_height: 640px
 | `max_events_per_day` | number | `3` | Events listed per day in Month view before "+N" |
 | `week_start` | `week` \| `today` | `week` | Week view starts at the start of the week, or today (7 days from today) |
 | `week_style` | `list` \| `timeline` | `list` | Week view as day columns, or an hour timeline with events sized by duration – see *Timeline week* |
+| `week_follow_now` | boolean | `true` | Timeline week: keep the current time in view as the day goes on – see *Timeline week* |
 | `week_hour_start` / `week_hour_end` | number | `7` / `22` | Hours shown in the Timeline week (it widens automatically for earlier or later events) |
 | `show_year_view` | boolean | `true` | Show the **Year** view button – see *Year view* |
 | `year_start` | `january` \| `month` | `january` | Year view shows the calendar year, or 12 months from the current month |
@@ -889,9 +890,12 @@ week_hour_start: 7     # first hour shown
 week_hour_end: 22      # last hour shown
 ```
 
+- **Bigger blocks:** `event_size` (Appearance → *Day & event size*) makes each hour taller and the text bigger; showing fewer hours (`week_hour_start` / `week_hour_end`) also gives each hour more room when the card fills the screen.
+
 - **All-day events** (trips, birthdays, holidays) sit in a strip at the top, spanning their days.
 - The hours **widen automatically** if an event starts earlier or ends later. The part of an overnight event that falls outside the hours is pinned to the top or bottom edge.
-- A red line marks **now**; today's column is outlined.
+- A red line marks **now** across the whole week (strongest in today's column, which is outlined).
+- **Follows the time:** when the card has a fixed height (`layout: fill` / `fullscreen`, or the layout designer), only the hours scroll – day names and all-day events stay put – and the schedule scrolls by itself so *now* stays about a third of the way down, like a TV guide. Scroll by hand and it stays where you left it, then picks up again after 90 seconds. Turn it off with `week_follow_now: false`.
 - **Tap an empty slot** to add an event at that time (rounded to the half hour).
 - On phones the week switches back to the list layout, as there's no room for 7 hour columns.
 

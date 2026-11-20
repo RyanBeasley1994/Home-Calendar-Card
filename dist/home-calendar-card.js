@@ -8,7 +8,7 @@
  * https://github.com/mimikm/Home-Calendar-Card
  */
 
-const CARD_VERSION = "1.21.1";
+const CARD_VERSION = "1.22.0";
 
 // Literal, complete names at the start only; longest names take precedence.
 function titlePersons(summary, configured) {
@@ -160,7 +160,7 @@ const I18N = {
     ed_backup: "Backup & restore", ed_backup_sub: "Save this card's settings to a file, or load them back – before big changes, or to copy the card to another dashboard.", ed_bk_download: "Download backup", ed_bk_copy: "Copy", ed_bk_copied: "Copied", ed_bk_restore: "Restore from file", ed_bk_confirm: "Replace the current settings with this backup ({d}, {n} calendars)?", ed_bk_replace: "Replace", ed_bk_done: "Settings restored – press Save to keep them.", ed_bk_bad: "This file isn't a Home Calendar Card backup.",
     ed_types: "Event types", ed_types_sub: "Types you can pick when adding an event or for a whole calendar. Rename, re-icon or remove the built-in ones, or add your own.", ed_add_type: "Add type", ed_new_type: "New type…", ed_new_type_help: "Its events get this type's icon and style. You can change it later under Event types.", ed_create_type: "Create type", l_type_name: "Name", l_type_icon: "Icon", l_type_all_day: "All day by default", l_type_countdown: "Countdown card", o_st_normal: "Normal", o_st_banner: "Holiday banner", o_st_birthday: "Birthday (turns X)", o_st_anniversary: "Anniversary (years)", o_st_nameday: "Name day", ed_type_style_help: "A holiday banner, birthday, anniversary or name-day calendar isn't a person: no Planner column.", ed_note2: "Countdowns are set in the code editor – see the README.",
     sync: "Sync calendars now", sync_err: "Couldn't sync the calendars", l_show_refresh_button: "Show refresh button", l_calendar_sync_minutes: "Sync calendars every … minutes (0 = off)",
-    year: "Year", l_week_style: "Week view style", o_ws_list: "List", o_ws_timeline: "Timeline (hours, like Outlook)", l_week_hour_start: "Timeline from (hour)", l_week_hour_end: "Timeline to (hour)", l_show_year_view: "Show Year view", l_year_start: "Year view starts", o_ys_jan: "In January", o_ys_month: "This month (next 12 months)", l_year_view: "Show in Year view", ed_year_help: "Its all-day events appear in the Year view. If no calendar is ticked, all are shown.",
+    year: "Year", l_week_style: "Week view style", o_ws_list: "List", o_ws_timeline: "Timeline (hours, like Outlook)", l_week_hour_start: "Timeline from (hour)", l_week_hour_end: "Timeline to (hour)", l_week_follow_now: "Timeline follows the current time", l_show_year_view: "Show Year view", l_year_start: "Year view starts", o_ys_jan: "In January", o_ys_month: "This month (next 12 months)", l_year_view: "Show in Year view", ed_year_help: "Its all-day events appear in the Year view. If no calendar is ticked, all are shown.",
     l_agenda_multiday: "Multi-day events in Agenda", o_am_every: "Every day", o_am_first: "First day only", am_until: "until {d}", am_day: "day {n} of {t}",
     l_exclude: "Hide events containing", l_include: "Only show events containing", l_exclude_all_day: "Hide all-day events", ed_exclude_help: "Words in the title, separated by | – e.g. vacation|out of office", ed_include_help: "Leave empty to show everything", ed_filtered: "filtered", ed_travel: "Travel time (Waze)", l_origin: "Drive from", ed_origin_help: "Usually zone.home. Needs the Waze Travel Time integration (Settings → Devices & services).", l_region: "Waze region", o_reg_auto: "Automatic", o_reg_eu: "Europe", o_reg_us: "United States", o_reg_na: "North America", o_reg_il: "Israel", o_reg_au: "Australia", l_vehicle_type: "Vehicle", o_car: "Car", o_taxi: "Taxi", o_motorcycle: "Motorcycle", l_hours_ahead: "For events in the next (hours)", l_avoid_toll_roads: "Avoid toll roads", l_avoid_ferries: "Avoid ferries", tt_min: "{n} min", tt_hm: "{h} h {m} min", tt_drive: "{d} drive", tt_leave_by: "Leave by {t}", tt_leave_now: "Leave now",
     ld_todo_pop: "Shown as a pop-up from a small button in the corner – the calendar takes over its space.", ld_todo_close: "Close the pop-up after (seconds)",
@@ -3959,6 +3959,9 @@ class HomeCalendarCard extends HTMLElement {
   _build() {
     this.shadowRoot.innerHTML = `<style>${STYLES}</style><ha-card><div class="inner"><div class="wrap"></div><div class="todo" hidden></div></div><div class="amb night"></div><div class="amb saver"></div><div class="fs-ctl"></div><div class="hcc-toast"></div></ha-card><dialog></dialog>`;
     this._main = this.shadowRoot.querySelector(".wrap");
+    // Timeline "follow now": a manual scroll pauses following for a while (see _tlScroll)
+    const userScroll = (e) => { if (e.type !== "pointerdown" || e.target === this._tlScroller) this._tlUserAt = Date.now(); };
+    ["wheel", "touchmove", "pointerdown"].forEach((ev) => this._main.addEventListener(ev, userScroll, { passive: true, capture: true }));
     const card = this.shadowRoot.querySelector("ha-card");
     card.addEventListener("pointerdown", (e) => this._ahPointer(e), true);
     card.addEventListener("click", (e) => { if (this._ahSwallow) { this._ahSwallow = false; e.stopPropagation(); e.preventDefault(); } }, true);
@@ -4413,7 +4416,9 @@ class HomeCalendarCard extends HTMLElement {
     const body = this._view === "month" ? this._renderMonth() : this._view === "week" ? (this._timeline() ? this._renderTimeline() : this._renderWeek())
       : this._view === "planner" ? this._renderPlanner() : this._view === "year" ? this._renderYear() : this._renderAgenda();
     const maxH = c.max_height ? ` style="max-height:${esc(c.max_height)};overflow:auto"` : "";
-    if (this._gridOn()) { this._renderGrid(body, maxH); return; }
+    const tlKey = this._view === "week" && this._timeline() ? `${dayKey(this._range().start)}` : null;
+    const tlPrev = tlKey && this._tlScroller?.isConnected && this._tlKey === tlKey ? this._tlScroller.scrollTop : null;
+    if (this._gridOn()) { this._renderGrid(body, maxH); this._tlScroll(tlKey, tlPrev); return; }
     if (this._inner.classList.contains("lg")) this._leaveGrid();
     const part = {
       header: () => this._renderHeader(),
@@ -4426,6 +4431,33 @@ class HomeCalendarCard extends HTMLElement {
       <div class="progress ${this._loading ? "on" : ""}"></div>
       ${this._error ? `<div class="error"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${esc(this._error)}</div>` : ""}
       <div class="body view-${this._view}"${maxH}>${body}</div>`;
+    this._tlScroll(tlKey, tlPrev);
+  }
+
+  // Timeline week: keep "now" about a third of the way down the visible hours as time passes (week_follow_now,
+  // on by default), like a TV guide. The card re-renders every minute; after a manual scroll the position is
+  // kept instead, and following resumes after 90 seconds without scrolling. Only the card's own scroll area moves.
+  _tlScroll(key, prev) {
+    this._tlKey = key;
+    this._tlScroller = null;
+    if (!key) return;
+    const body = this._main.querySelector(".tl-body");
+    let sc = body;
+    while (sc && sc !== this._main.parentElement) {
+      const o = getComputedStyle(sc).overflowY;
+      if ((o === "auto" || o === "scroll") && sc.scrollHeight > sc.clientHeight + 1) break;
+      sc = sc.parentElement;
+    }
+    if (!sc || sc === this._main.parentElement) return;
+    this._tlScroller = sc;
+    const line = this._main.querySelector(".tl-now") || this._main.querySelector(".tl-now-all");
+    const paused = Date.now() - (this._tlUserAt || 0) < 90 * 1000;
+    if (this._config.week_follow_now === false || paused || !line) {
+      if (prev != null) sc.scrollTop = prev;
+      return;
+    }
+    const y = line.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    sc.scrollTop = Math.max(0, y - sc.clientHeight * 0.3);
   }
 
   /* ------------------------------------------------------------- grid layout */
@@ -4886,6 +4918,8 @@ class HomeCalendarCard extends HTMLElement {
     const label = (h) => esc(this._time(new Date(2000, 0, 1, h, 0)));
     const now = new Date();
     const nowM = now.getHours() * 60 + now.getMinutes();
+    // "now" line: in today's column (with a dot) and, fainter, through the other days of the week
+    const nowLine = days.some((d) => dayKey(d) === today) && nowM >= h0 * 60 && nowM <= h1 * 60;
     const canAdd = this._config.allow_add !== false && this._writable().length > 0;
     let out = `<div class="tl" style="--tln:${h1 - h0}">
       <div class="tl-row tl-heads"><div class="tl-gut"></div>${days.map((d) => `
@@ -4921,7 +4955,7 @@ class HomeCalendarCard extends HTMLElement {
             <div class="tlt">${esc(this._time(ev.start < d ? d : ev.start))}${tiny ? "" : ` – ${esc(this._time(ev.end))}`}</div><div class="tls">${this._typeIcon(ev) ? `<ha-icon icon="${esc(this._typeIcon(ev))}"></ha-icon>` : ""}${esc(ev.summary)}</div>
           </div>`;
         }).join("")}
-        ${isToday && nowM >= h0 * 60 && nowM <= h1 * 60 ? `<div class="tl-now" style="top:${pct(nowM)}%"></div>` : ""}
+        ${nowLine ? `<div class="${isToday ? "tl-now" : "tl-now-all"}" style="top:${pct(nowM)}%"></div>` : ""}
       </div>`;
     });
     return out + `</div></div>`;
@@ -6232,7 +6266,7 @@ dialog[open] { display: flex; flex-direction: column; animation: pop .18s ease-o
 .tl-day { margin: 0; }
 .tl-all { row-gap: 3px; align-items: center; }
 .tl-alllbl { font-size: .72rem; color: var(--hcc-muted); text-align: right; padding-right: 6px; align-self: center; }
-.tlbar { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; padding: 2px 8px; border-radius: 6px; font-size: .78rem; font-weight: 600;
+.tlbar { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; padding: 2px 8px; border-radius: 6px; font-size: calc(.78rem * var(--ev-scale, 1)); font-weight: 600;
   background: color-mix(in srgb, var(--c) 18%, var(--hcc-card, #fff)); border-left: 3px solid var(--c); color: var(--hcc-text); cursor: pointer; white-space: nowrap; box-sizing: border-box; }
 .tlbar ha-icon { color: var(--c); }
 .tlbar span { overflow: hidden; text-overflow: ellipsis; }
@@ -6241,11 +6275,17 @@ dialog[open] { display: flex; flex-direction: column; animation: pop .18s ease-o
 .tlbar.cl { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; }
 .tlbar.cr { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .tlbar.past { opacity: .55; }
-.tl-body { height: calc(var(--tln) * 44px); }
+.tl-body { height: calc(var(--tln) * 44px * var(--ev-scale, 1)); }
 :host([layout="fill"]) .tl, :host([layout="fullscreen"]) .tl { height: 100%; }
-:host([layout="fill"]) .tl-body, :host([layout="fullscreen"]) .tl-body { height: auto; flex: 1 1 auto; min-height: calc(var(--tln) * 26px); }
+/* With a fixed card height (layout designer blocks, fill, fullscreen) only the hours scroll – day names and the
+   all-day row stay put. Hours stretch to fill the space and never get shorter than 26px × event_size. */
+.lb-calendar > .body.view-week:has(> .tl) { display: flex; flex-direction: column; overflow: hidden; }
+.lb-calendar .tl { flex: 1 1 auto; min-height: 0; }
+.lb-calendar .tl-body, :host([layout="fill"]) .tl-body, :host([layout="fullscreen"]) .tl-body { height: auto; flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; grid-template-rows: minmax(calc(var(--tln) * 26px * var(--ev-scale, 1)), 1fr); }
+.tl-body::-webkit-scrollbar { display: none; }
 .tl-hours { position: relative; }
-.tl-hours span { position: absolute; right: 6px; transform: translateY(-50%); font-size: .7rem; color: var(--hcc-muted); white-space: nowrap; }
+.tl-hours span { position: absolute; right: 6px; transform: translateY(-50%); font-size: calc(.7rem * var(--ev-scale, 1)); color: var(--hcc-muted); white-space: nowrap; }
 .tl-hours span:first-child { transform: none; }
 .tl-col { position: relative; border-radius: 8px; background: var(--hcc-surface, rgba(127,127,127,.06));
   background-image: repeating-linear-gradient(to bottom, var(--hcc-line) 0 1px, transparent 1px calc(100% / var(--tln))); }
@@ -6255,13 +6295,16 @@ dialog[open] { display: flex; flex-direction: column; animation: pop .18s ease-o
 .tlev > div { overflow: hidden; }
 .tlev { display: flex; flex-direction: column; }
 .tlev::before { content: ""; position: absolute; inset: 1px; border-radius: 6px; background: color-mix(in srgb, var(--c) 18%, var(--hcc-card, #fff)); border-left: 3px solid var(--c); z-index: -1; }
-.tlev { z-index: 1; padding: 3px 5px 2px 8px; font-size: .78rem; line-height: 1.2; }
-.tlev .tlt { font-size: .7rem; color: var(--hcc-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tlev { z-index: 1; padding: 3px 5px 2px 8px; font-size: calc(.78rem * var(--ev-scale, 1)); line-height: 1.2; }
+.tlev .tlt { font-size: calc(.7rem * var(--ev-scale, 1)); color: var(--hcc-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tlev .tls { font-weight: 600; color: var(--hcc-text); }
 .tlev .tls ha-icon { --mdc-icon-size: 13px; margin-right: 3px; vertical-align: -2px; }
 .tlev.tiny { flex-direction: row; gap: 5px; align-items: center; padding-top: 0; padding-bottom: 0; white-space: nowrap; }
 .tlev.past { opacity: .55; }
 .tl-now { position: absolute; left: 0; right: 0; height: 2px; background: #ef4444; z-index: 2; pointer-events: none; }
+/* the "now" line carries on through the other days of the week (bridging the 4px gaps between columns) */
+.tl-now-all { position: absolute; left: -2px; right: -2px; height: 0; border-top: 1.5px solid color-mix(in srgb, #ef4444 60%, transparent);
+  z-index: 2; pointer-events: none; }
 .tl-now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
 /* Year view (#25) */
 .year { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: auto repeat(31, minmax(20px, auto)); gap: 1px 4px; }
@@ -6683,12 +6726,12 @@ const NIGHT_DEFAULTS = { enabled: false, style: "clock", start: "22:00", end: "0
 const SAVER_DEFAULTS = { enabled: false, after: 5, interval: 20, shuffle: true, show_info: true };
 const TRAVEL_DEFAULTS = { enabled: false, origin: "zone.home", region: "auto", vehicle_type: "car", hours_ahead: 12, avoid_toll_roads: false, avoid_ferries: false, geocode: false };
 // editor defaults that are not written to YAML until changed
-const LOOK_DEFAULTS = { use_event_colors: true, countdown_style: "cards", countdown_size: 100, event_size: 100, month_mobile: "list", show_clock: false, clock_seconds: true,
+const LOOK_DEFAULTS = { use_event_colors: true, week_follow_now: true, countdown_style: "cards", countdown_size: 100, event_size: 100, month_mobile: "list", show_clock: false, clock_seconds: true,
   clock_format: "auto", show_view_selector: true, show_date_navigation: true, show_refresh_button: true, calendar_sync_minutes: 0, week_style: "list", week_hour_start: 7, week_hour_end: 22, show_year_view: true, year_start: "january", event_time_position: "above", show_event_location: true,
   show_event_calendar: true, multiday_bars: true, agenda_multiday: "every", todo_show_empty: true, planner_days: 7, planner_start: "week", month_start: "week", week_start: "week", agenda_date: "both" };
 const GENERAL_KEYS = ["title", "language", "weather_entity", "todo_entity", "todo_title", "todo_position", "todo_autohide",
   "todo_lists", "todo_group_by", "todo_show_empty", "todo_days_ahead", "todo_calendar", "todo_show_completed", "todo_completed_days",
-  "show_countdowns", "countdown_style", "countdown_size", "event_size", "show_calendar_chips", "month_mobile", "month_show_time", "use_event_colors",
+  "show_countdowns", "countdown_style", "countdown_size", "event_size", "show_calendar_chips", "month_mobile", "month_show_time", "use_event_colors", "week_follow_now",
   "sections", "show_view_selector", "show_date_navigation", "show_refresh_button", "calendar_sync_minutes", "agenda_date", "agenda_multiday", "event_time_position", "show_event_location", "show_event_calendar",
   "show_clock", "clock_seconds", "clock_format",
   "default_view", "days_to_show", "show_week_numbers", "multiday_bars", "planner_days", "planner_start", "month_weeks", "month_start", "week_start", "week_style", "week_hour_start", "week_hour_end", "show_year_view", "year_start", "first_day_of_week", "time_format", "layout", "keep_awake", "show_header", "allow_add",
@@ -6730,6 +6773,7 @@ const generalSchema = (t, hasGrid = false) => {
       { name: "week_style", selector: { select: { mode: "dropdown", options: [o("list", "o_ws_list"), o("timeline", "o_ws_timeline")] } } },
       { name: "week_hour_start", selector: { number: { min: 0, max: 23, mode: "box" } } },
       { name: "week_hour_end", selector: { number: { min: 1, max: 24, mode: "box" } } },
+      { name: "week_follow_now", selector: { boolean: {} } },
       { name: "show_year_view", selector: { boolean: {} } },
       { name: "year_start", selector: { select: { mode: "dropdown", options: [o("january", "o_ys_jan"), o("month", "o_ys_month")] } } },
       { name: "first_day_of_week", selector: { select: { mode: "dropdown", options: [o("monday", "o_monday"), o("sunday", "o_sunday"), o("saturday", "o_saturday")] } } },
