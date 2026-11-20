@@ -23,13 +23,13 @@ const between = (a, b) => {
 const themes = between("const THEMES = {", "const THEME_VARS");
 const helpers = between("/* ---- event colours (use_event_colors) ----", "/* ---- end event colours ---- */");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const H = new Function(`${themes}; ${helpers}; return { THEMES, cleanColor, luminance, inkFor, toneEventColor, colorSiblings, eventKey };`)();
+const H = new Function(`${themes}; ${helpers}; return { THEMES, cleanColor, luminance, inkFor, toneEventColor, colorSiblings, colorEntities, isOtherColorEntity, eventKey };`)();
 
 // the card's own methods, bound to a small stand-in card
 const methods = between("  _useEventColors() {", "  // Calendar filters: false = leave this event out of the card");
 const colorMethods = between("  _eventColor(e, cal) {", "  _onDay(day) {");
-const proto = new Function("cleanColor", "colorSiblings", "eventKey", "toneEventColor", "inkFor", "esc", "console",
-  `return (class {${methods}${colorMethods}}).prototype;`)(H.cleanColor, H.colorSiblings, H.eventKey, H.toneEventColor, H.inkFor, esc,
+const proto = new Function("cleanColor", "colorSiblings", "colorEntities", "isOtherColorEntity", "eventKey", "toneEventColor", "inkFor", "esc", "console",
+  `return (class {${methods}${colorMethods}}).prototype;`)(H.cleanColor, H.colorSiblings, H.colorEntities, H.isOtherColorEntity, H.eventKey, H.toneEventColor, H.inkFor, esc,
   { warn: () => {} });
 
 const ev = (uid, summary, start, extra = {}) => ({
@@ -127,10 +127,44 @@ test("a colour entity in the card colours all of its events", async () => {
 });
 
 test("without the integration: one request, events untouched", async () => {
-  const c = card();
+  const states = { "calendar.plain": STATES["calendar.plain"], "calendar.plain_extra": STATES["calendar.plain_extra"] };
+  const c = card({}, { states });
   const evs = await c._calEvents("calendar.plain", START, END);
   assert.deepEqual(c.calls, ["calendar.plain"]);
   assert.deepEqual(evs, API["calendar.plain"]);
+});
+
+test("a calendar whose entity id was changed (calendar.personal_2) still gets its colours", async () => {
+  // HA kept calendar.personal_2 from before; the integration named the colour entities calendar.personal_…
+  const p1 = ev("p1", "Dentist", "2026-11-20T09:00:00-05:00");
+  const p2 = ev("p2", "Parents evening", "2026-11-21T09:00:00-05:00");
+  const p3 = ev("p3", "Gym", "2026-11-22T09:00:00-05:00");
+  const api = { ...API, "calendar.personal_2": [p1, p2, p3], "calendar.personal_tomato": [p1], "calendar.personal_sage": [p2], "calendar.personal_other": [p3] };
+  const states = { ...STATES, "calendar.personal_2": { attributes: {} },
+    "calendar.personal_tomato": { attributes: { color: "#d50000" } }, "calendar.personal_sage": { attributes: { color: "#33b679" } },
+    "calendar.personal_other": { attributes: { color: "#9fe1e7" } } };
+  const c = card({}, { states, api });
+  const evs = await c._calEvents("calendar.personal_2", START, END);
+  assert.deepEqual(evs.map((e) => e._hccColor), ["#D50000", "#33B679", undefined]);
+  // a calendar with no colour entities of its own: unrelated colour entities don't change its events
+  assert.ok((await c._calEvents("calendar.plain", START, END)).every((e) => e._hccColor === undefined));
+});
+
+test("each colour entity is read once per refresh, however many calendars use it", async () => {
+  const c = card();
+  await Promise.all(["calendar.family", "calendar.plain"].map((ent) => c._calEvents(ent, START, END)));
+  const reads = c.calls.filter((e) => e !== "calendar.family" && e !== "calendar.plain");
+  assert.deepEqual([...reads].sort(), [...new Set(reads)].sort());
+  assert.equal(reads.length, 4); // school, doctor, birthday, work – not other
+});
+
+test("events named after this calendar win over another calendar's colour for the same event", async () => {
+  // the same Google event (same uid) on two split calendars, in different colours
+  const shared = ev("s1", "School play", "2026-11-25T09:00:00-05:00");
+  const api = { ...API, "calendar.family": [shared], "calendar.family_school": [shared], "calendar.work_red": [shared] };
+  const states = { ...STATES, "calendar.work_red": { attributes: { color: "#d50000" } } };
+  const evs = await card({}, { states, api })._calEvents("calendar.family", START, END);
+  assert.equal(evs[0]._hccColor, "#33B679");
 });
 
 test("use_event_colors: false reads only the configured calendar", async () => {

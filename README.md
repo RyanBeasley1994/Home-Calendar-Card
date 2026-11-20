@@ -1155,7 +1155,7 @@ calendars:
     color: "#10B981"   # still used for events without their own colour
 ```
 
-For each calendar in the card, the card finds its colour entities (same entity ID followed by `_…`, with a `color` attribute), reads their events and colours the matching events of `calendar.family`. Change an event's colour in Google and it shows in the new colour after the next sync – even a colour you've never used before. You can also put a colour entity itself in the card (e.g. `calendar.family_doctor`); its events then all get its colour.
+The card reads the events of every colour entity (any calendar with a `color` attribute) and colours the matching events of `calendar.family` – matched by the event's Google ID, so it works even if your calendar's entity ID differs from its colour entities' (e.g. `calendar.personal_2` with `calendar.personal_school`). If one event is on two split calendars, the colour from the entity named after the card's calendar wins. Change an event's colour in Google and it shows in the new colour after the next sync – even a colour you've never used before. You can also put a colour entity itself in the card (e.g. `calendar.family_doctor`); its events then all get its colour.
 
 Colour order: **the event's own Google colour → the calendar's `color` → the theme's automatic colour.** Events in the *Other* entity, and all events when the integration isn't installed, keep the calendar colour exactly as before.
 
@@ -1173,7 +1173,7 @@ Setup:
 3. **Settings → Devices & services → Google Calendar → Configure** → tick the calendars under *Calendars to split by event colour*.
 4. Leave the card's `calendars:` as they are. Don't add the colour entities as well as their calendar, or events show twice.
 
-Limits: the card matches the colour entities by entity ID, so if you rename `calendar.family_doctor` to something that doesn't start with `calendar.family_`, add it to the card directly instead. Events that use the calendar's own default colour count as coloured when the integration gives that colour its own entity (rather than *Other*), so they show in Google's calendar colour. Each colour entity is one more request when the card refreshes.
+Limits: an *Other* entity is recognised by its entity ID ending in `_other` – if you rename it, add `use_event_colors: false` or keep the name. Events that use the calendar's own default colour count as coloured when the integration gives that colour its own entity (rather than *Other*), so they show in Google's calendar colour. Each colour entity is one more request when the card refreshes (once per refresh, however many calendars the card shows).
 
 ### Visual editor
 

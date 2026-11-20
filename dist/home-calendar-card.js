@@ -8,7 +8,7 @@
  * https://github.com/mimikm/Home-Calendar-Card
  */
 
-const CARD_VERSION = "1.21.0";
+const CARD_VERSION = "1.21.1";
 
 // Literal, complete names at the start only; longest names take precedence.
 function titlePersons(summary, configured) {
@@ -2247,10 +2247,15 @@ const toneEventColor = (hex, theme) => {
   const bg = hexRgb(t.vars.bg);
   return rgbHex(hexRgb(hex).map((c, i) => c * 0.8 + bg[i] * 0.2));
 };
-// The colour entities split off a configured calendar: same entity id + "_…", with a hex `color` attribute
-// (plain calendars – including the parent – have none). Calendars already in the card are left out.
-const colorSiblings = (states, entity, configured = []) => Object.keys(states || {}).filter((id) => id !== entity
-  && id.startsWith(`${entity}_`) && !configured.includes(id) && cleanColor(states[id]?.attributes?.color));
+// Colour entities: calendars with a hex `color` attribute (plain calendars – including the parent – have none).
+// "…_other" holds the events with no colour of their own, so it never colours anything.
+const isOtherColorEntity = (id) => /_other(_\d+)?$/.test(id);
+const colorEntities = (states) => Object.keys(states || {}).filter((id) => id.startsWith("calendar.")
+  && cleanColor(states[id]?.attributes?.color));
+// The colour entities named after a calendar: same entity id + "_…". If the calendar's entity id was changed
+// (e.g. calendar.personal_2) its colour entities may be named differently (calendar.personal_school), so
+// _calEvents also checks every other colour entity, matching events by their Google uid.
+const colorSiblings = (states, entity) => colorEntities(states).filter((id) => id !== entity && id.startsWith(`${entity}_`));
 const eventKey = (e) => `${e?.uid ?? ""}|${e?.recurrence_id ?? ""}|${e?.start?.dateTime ?? e?.start?.date ?? e?.start ?? ""}`;
 /* ---- end event colours ---- */
 // One layout (desktop or phone): { columns, rows ("auto" | n), col_sizes, row_sizes, blocks: { name: { col, row, w, h, show } } }
@@ -3464,17 +3469,31 @@ class HomeCalendarCard extends HTMLElement {
     const get = async (ent) => (await this._hass.callApi("GET",
       `calendars/${ent}?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`)) || [];
     if (!this._useEventColors()) return get(entity);
-    const own = cleanColor(this._hass.states[entity]?.attributes?.color);
-    if (own) return (await get(entity)).map((e) => (/_other(_\d+)?$/.test(entity) ? e : { ...e, _hccColor: own }));
-    const sibs = colorSiblings(this._hass.states, entity).filter((s) => !/_other(_\d+)?$/.test(s.slice(entity.length)));
-    if (!sibs.length) return get(entity);
-    const map = new Map();
-    const [res] = await Promise.all([get(entity), ...sibs.map(async (s) => {
-      const color = cleanColor(this._hass.states[s].attributes.color);
-      try { (await get(s)).forEach((e) => map.set(eventKey(e), color)); } catch (err) {
-        console.warn("home-calendar-card: could not read colour calendar", s, err); // the events keep the calendar colour
+    const states = this._hass.states;
+    const own = cleanColor(states[entity]?.attributes?.color);
+    if (own) return (await get(entity)).map((e) => (isOtherColorEntity(entity) ? e : { ...e, _hccColor: own }));
+    const near = colorSiblings(states, entity);
+    const sources = colorEntities(states).filter((s) => s !== entity && !isOtherColorEntity(s))
+      .sort((a, b) => near.includes(a) - near.includes(b)); // named after this calendar last, so they win
+    if (!sources.length) return get(entity);
+    // each colour entity is read once per refresh, however many calendars the card shows
+    const cache = this._colorEvCache && this._colorEvCache.range === `${startIso}|${endIso}` && Date.now() - this._colorEvCache.at < 30000
+      ? this._colorEvCache : (this._colorEvCache = { range: `${startIso}|${endIso}`, at: Date.now(), lists: new Map() });
+    const read = (s) => {
+      if (!cache.lists.has(s)) {
+        cache.lists.set(s, get(s).catch((err) => {
+          console.warn("home-calendar-card: could not read colour calendar", s, err); // the events keep the calendar colour
+          return [];
+        }));
       }
-    })]);
+      return cache.lists.get(s);
+    };
+    const [res, ...lists] = await Promise.all([get(entity), ...sources.map(read)]);
+    const map = new Map();
+    lists.forEach((list, i) => {
+      const color = cleanColor(states[sources[i]].attributes.color);
+      list.forEach((e) => map.set(eventKey(e), color));
+    });
     return res.map((e) => (map.has(eventKey(e)) ? { ...e, _hccColor: map.get(eventKey(e)) } : e));
   }
 
