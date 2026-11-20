@@ -36,6 +36,7 @@ test("planner keeps filtered entries of one entity in their own columns and side
     _writable: () => [],
     _fmt: () => ({ format: () => "" }),
     _multiBars: () => true,
+    _evVars: (ev) => `--c:${ev.cal.color}`,
     _barSegs: (_start, _days, filter) => {
       // Multi-day selection must use the same per-entry identity.
       const selected = events.filter(filter);

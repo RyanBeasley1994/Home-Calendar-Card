@@ -74,6 +74,14 @@ const THEMES = {
     vars: { bg: "#0F172A", text: "#E2E8F0", muted: "#94A3B8", line: "rgba(148,163,184,.18)", soft: "rgba(148,163,184,.08)", accent: "#38BDF8", onAccent: "#0F172A" },
     palette: ["#38BDF8", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#FB7185", "#2DD4BF", "#FB923C"],
   },
+  // Pastel: a family-wall-display look – white canvas, solid pastel event cards with dark text, pastel person
+  // pills (see the theme CSS under :host([data-theme="pastel"])). The palette is mid-tone so dots, bars and
+  // avatars stay visible; event cards are drawn as a light mix of it (also for Google event colours).
+  pastel: {
+    name: "Pastel", dark: false,
+    vars: { bg: "#FFFFFF", text: "#1F1F24", muted: "#8A8A96", line: "rgba(31,31,36,.08)", soft: "rgba(31,31,36,.03)", accent: "#3D6BF5", onAccent: "#FFFFFF" },
+    palette: ["#EC6F9A", "#E9B934", "#D47BDE", "#4FB0EC", "#9CCB3B", "#F29A5C", "#3FBF96", "#8E94A6"],
+  },
   graphite: {
     name: "Graphite", dark: true,
     vars: { bg: "#1C1C1E", text: "#F2F2F7", muted: "#98989F", line: "rgba(255,255,255,.12)", soft: "rgba(255,255,255,.06)", accent: "#FF9F0A", onAccent: "#1C1C1E" },
@@ -91,6 +99,7 @@ const COUNTDOWN_COLORS = {
   sunset:   { birthday: "#B5367A", anniversary: "#D7263D", holiday: "#2A9D8F", nameday: "#C9A227", event: "#8C6E63", custom: ["#E07A5F", "#457B9D", "#6D597A", "#7C9A3D"] },
   forest:   { birthday: "#A2557A", anniversary: "#B23A48", holiday: "#2E7DAF", nameday: "#C8961E", event: "#5F7366", custom: ["#D07A3C", "#5B8E3E", "#6F5CA8", "#3E8E8E"] },
   midnight: { birthday: "#E879F9", anniversary: "#FB7185", holiday: "#38BDF8", nameday: "#FACC15", event: "#94A3B8", custom: ["#FB923C", "#34D399", "#A78BFA", "#A3E635"] },
+  pastel:   { birthday: "#D47BDE", anniversary: "#EC6F9A", holiday: "#4FB0EC", nameday: "#E9B934", event: "#8E94A6", custom: ["#F29A5C", "#3FBF96", "#8C7CF0", "#9CCB3B"] },
   graphite: { birthday: "#DA8FFF", anniversary: "#FF6482", holiday: "#64D2FF", nameday: "#FFD60A", event: "#98989F", custom: ["#FF9F0A", "#30D158", "#5E9EFF", "#AC8E68"] },
 };
 
@@ -145,6 +154,8 @@ const I18N = {
     l_todo_show_empty: "Show people with an empty own list", tg_empty: "Nothing to do",
     l_todo_lists: "More lists as tabs (e.g. shopping)", ed_todo_lists_help: "Each list gets its own tab in the to-do block. Set a title or icon in YAML.",
     l_month_show_time: "Show start time in Month view",
+    l_use_event_colors: "Use Google event colours",
+    ed_event_colors_help: "Colour each event in its own Google Calendar colour. Needs the Google Calendar (event colours) integration; otherwise the calendar colour is used.",
     l_geocode: "Look up addresses with OpenStreetMap", ed_geocode_help: "Waze no longer finds addresses itself. This sends event locations to OpenStreetMap (free, no key) to get their coordinates.", multi_sel: "Several", added_n: "Added “{t}” to {n} calendars", err_some: "Couldn't add it to: {c}",
     ed_backup: "Backup & restore", ed_backup_sub: "Save this card's settings to a file, or load them back – before big changes, or to copy the card to another dashboard.", ed_bk_download: "Download backup", ed_bk_copy: "Copy", ed_bk_copied: "Copied", ed_bk_restore: "Restore from file", ed_bk_confirm: "Replace the current settings with this backup ({d}, {n} calendars)?", ed_bk_replace: "Replace", ed_bk_done: "Settings restored – press Save to keep them.", ed_bk_bad: "This file isn't a Home Calendar Card backup.",
     ed_types: "Event types", ed_types_sub: "Types you can pick when adding an event or for a whole calendar. Rename, re-icon or remove the built-in ones, or add your own.", ed_add_type: "Add type", ed_new_type: "New type…", ed_new_type_help: "Its events get this type's icon and style. You can change it later under Event types.", ed_create_type: "Create type", l_type_name: "Name", l_type_icon: "Icon", l_type_all_day: "All day by default", l_type_countdown: "Countdown card", o_st_normal: "Normal", o_st_banner: "Holiday banner", o_st_birthday: "Birthday (turns X)", o_st_anniversary: "Anniversary (years)", o_st_nameday: "Name day", ed_type_style_help: "A holiday banner, birthday, anniversary or name-day calendar isn't a person: no Planner column.", ed_note2: "Countdowns are set in the code editor – see the README.",
@@ -2200,6 +2211,48 @@ const BLOCK_ICONS = { date: "mdi:calendar-today", clock: "mdi:clock-outline", we
   calendar: "mdi:calendar-month-outline", todo: "mdi:checkbox-marked-circle-outline" };
 const BLOCK_MIN = { calendar: [2, 1], todo: [2, 1] };
 const clampInt = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+
+/* ---- event colours (use_event_colors) ----
+ * Home Assistant's calendar API has no colour on events. The "Google Calendar (event colours)" integration
+ * (github.com/Jam3s97/ha-google-calendar-event-colors) instead splits a Google calendar into one calendar
+ * entity per event colour – calendar.family → calendar.family_school, calendar.family_other, … – each with
+ * its Google colour as a hex `color` state attribute. The card reads that attribute.
+ */
+// "#abc" / "#AABBCC" → "#AABBCC"; anything else (names, rgb(), CSS vars, empty) → null
+const cleanColor = (v) => {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(v ?? "").trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? m[1].replace(/./g, "$&$&") : m[1];
+  return `#${h.toUpperCase()}`;
+};
+const hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const rgbHex = (rgb) => `#${rgb.map((n) => Math.round(n).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+// WCAG relative luminance (0 = black, 1 = white)
+const luminance = (hex) => {
+  const [r, g, b] = hexRgb(hex).map((c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+// Text colour for a solid background: whichever of dark/light has the higher contrast ratio.
+const INK_DARK = "#1F2937";
+const INK_LIGHT = "#FFFFFF";
+const inkFor = (hex) => {
+  const l = luminance(hex);
+  return (l + 0.05) / (luminance(INK_DARK) + 0.05) > (1.05) / (l + 0.05) ? INK_DARK : INK_LIGHT;
+};
+// On dark themes (Midnight, Graphite) very bright Google colours (Banana, Citron, …) are blended a little
+// into the theme background so they don't glare; darker colours are left as they are.
+const toneEventColor = (hex, theme) => {
+  const t = THEMES[theme];
+  if (!t?.dark || luminance(hex) < 0.3) return hex;
+  const bg = hexRgb(t.vars.bg);
+  return rgbHex(hexRgb(hex).map((c, i) => c * 0.8 + bg[i] * 0.2));
+};
+// The colour entities split off a configured calendar: same entity id + "_…", with a hex `color` attribute
+// (plain calendars – including the parent – have none). Calendars already in the card are left out.
+const colorSiblings = (states, entity, configured = []) => Object.keys(states || {}).filter((id) => id !== entity
+  && id.startsWith(`${entity}_`) && !configured.includes(id) && cleanColor(states[id]?.attributes?.color));
+const eventKey = (e) => `${e?.uid ?? ""}|${e?.recurrence_id ?? ""}|${e?.start?.dateTime ?? e?.start?.date ?? e?.start ?? ""}`;
+/* ---- end event colours ---- */
 // One layout (desktop or phone): { columns, rows ("auto" | n), col_sizes, row_sizes, blocks: { name: { col, row, w, h, show } } }
 const normLayout = (L) => {
   const cols = clampInt(L?.columns, 1, 24, 12);
@@ -2434,7 +2487,8 @@ class HomeCalendarCard extends HTMLElement {
     const rebound = new Map(oldCals.map((c) => [c, available.get(key(c))?.shift()]));
     this._events = (this._events || []).flatMap((ev) => {
       const cal = rebound.get(ev.cal);
-      return cal ? [{ ...ev, cal }] : [];
+      if (!cal) return [];
+      return [{ ...ev, cal, ...(ev.ownColor && this._useEventColors() ? {} : { color: cal.color, ink: null, ownColor: false }) }];
     });
     const defs = Object.fromEntries(DEFAULT_TYPES.map((t) => [t.id, t]));
     const resolveCalTypes = () => this._calendars.forEach((c) => {
@@ -3229,9 +3283,8 @@ class HomeCalendarCard extends HTMLElement {
     const lists = await Promise.all(this._calendars.map(async (cal) => {
       if (!this._hass.states[cal.entity]) { errors.push(`${cal.entity} not found`); return []; }
       try {
-        const res = await this._hass.callApi("GET",
-          `calendars/${cal.entity}?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`);
-        return (res || []).filter((e) => this._keep(e, cal)).map((e) => this._normalize(e, cal));
+        const res = await this._calEvents(cal.entity, start.toISOString(), end.toISOString());
+        return res.filter((e) => this._keep(e, cal)).map((e) => this._normalize(e, cal));
       } catch (e) {
         errors.push(`${cal.entity}: ${e?.body?.message || e?.message || "could not load events"}`);
         return [];
@@ -3401,6 +3454,30 @@ class HomeCalendarCard extends HTMLElement {
     return `<span class="tt ${i.state}" title="${esc(this._t("tt_drive", { d: i.dur }))}${i.dist ? ` · ${esc(i.dist)}` : ""}"><ha-icon icon="${i.state === "now" ? "mdi:car-clock" : "mdi:car"}"></ha-icon>${esc(i.dur)}${esc(extra)}</span>`;
   }
 
+  _useEventColors() { return this._config?.use_event_colors !== false; }
+
+  // Events of one calendar from Home Assistant's REST API. With use_event_colors, each event whose Google
+  // colour is known gets it as `_hccColor` (see colorSiblings): from the entity's own `color` attribute when
+  // the calendar is itself a colour entity, otherwise by matching the parent's events against the events of
+  // its colour entities. Events in the "Other" entity have no colour of their own and are left untagged.
+  async _calEvents(entity, startIso, endIso) {
+    const get = async (ent) => (await this._hass.callApi("GET",
+      `calendars/${ent}?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`)) || [];
+    if (!this._useEventColors()) return get(entity);
+    const own = cleanColor(this._hass.states[entity]?.attributes?.color);
+    if (own) return (await get(entity)).map((e) => (/_other(_\d+)?$/.test(entity) ? e : { ...e, _hccColor: own }));
+    const sibs = colorSiblings(this._hass.states, entity).filter((s) => !/_other(_\d+)?$/.test(s.slice(entity.length)));
+    if (!sibs.length) return get(entity);
+    const map = new Map();
+    const [res] = await Promise.all([get(entity), ...sibs.map(async (s) => {
+      const color = cleanColor(this._hass.states[s].attributes.color);
+      try { (await get(s)).forEach((e) => map.set(eventKey(e), color)); } catch (err) {
+        console.warn("home-calendar-card: could not read colour calendar", s, err); // the events keep the calendar colour
+      }
+    })]);
+    return res.map((e) => (map.has(eventKey(e)) ? { ...e, _hccColor: map.get(eventKey(e)) } : e));
+  }
+
   // Calendar filters: false = leave this event out of the card (it stays in Home Assistant).
   _keep(e, cal) {
     if (!cal) return true;
@@ -3450,12 +3527,26 @@ class HomeCalendarCard extends HTMLElement {
       id: `e${++EV_SEQ}`, summary: summary || "(No title)", description,
       location: e.location || "", uid: e.uid, recurrence_id: e.recurrence_id, rrule: e.rrule,
       allDay, start, end, cal,
+      ...this._eventColor(e, cal),
     };
     if (!isPrivate) return ev;
     // Private: keep the real details for editing, show only "Private" + the time everywhere else.
     ev.real = { summary: ev.summary, title, description, location: ev.location, type: typeId, age };
     return Object.assign(ev, { private: true, summary: this._t("private_ev"), title: this._t("private_ev"), description: "", location: "", type: "standard", tagged: false, age: null, ruleIcon: "" });
   }
+
+  // Colour priority: the event's own Google colour (use_event_colors) → the calendar colour (configured, else
+  // the theme palette). `ink` is the readable text colour on a solid fill – set only for event colours, so
+  // events without one look exactly as before.
+  _eventColor(e, cal) {
+    const own = this._useEventColors() && cleanColor(e?._hccColor);
+    if (!own) return { color: cal.color, ink: null, ownColor: false };
+    const color = toneEventColor(own, this._config.theme);
+    return { color, ink: inkFor(color), ownColor: true };
+  }
+
+  // Inline CSS variables for an event element: --c (colour) and, for event colours, --ct (text on solid fills)
+  _evVars(ev) { return `--c:${esc(ev.color ?? ev.cal.color)}${ev.ink ? `;--ct:${ev.ink}` : ""}`; }
 
   _onDay(day) {
     const s = startOfDay(day);
@@ -3514,7 +3605,7 @@ class HomeCalendarCard extends HTMLElement {
     const ev = sg.ev;
     const ban = this._isBanner(ev);
     const icon = ban ? (ev.tagged ? this._typeIcon(ev) : ev.cal.icon) || "mdi:party-popper" : this._typeIcon(ev);
-    return `<div class="${cls} ${ban ? "ban" : ""} ${sg.cl ? "cl" : ""} ${sg.cr ? "cr" : ""} ${ev.end <= new Date() ? "past" : ""}" style="--c:${esc(ev.cal.color)};--lane:${sg.lane};${style}" data-action="open-event" data-id="${ev.id}" title="${esc(`${ev.summary} · ${this._whenText(ev)}`)}">${icon ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ""}<span>${esc(cls === "pbar" ? this._plannerTitle(ev) : ev.summary)}</span></div>`;
+    return `<div class="${cls} ${ban ? "ban" : ""} ${sg.cl ? "cl" : ""} ${sg.cr ? "cr" : ""} ${ev.end <= new Date() ? "past" : ""}" style="${this._evVars(ev)};--lane:${sg.lane};${style}" data-action="open-event" data-id="${ev.id}" title="${esc(`${ev.summary} · ${this._whenText(ev)}`)}">${icon ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ""}<span>${esc(cls === "pbar" ? this._plannerTitle(ev) : ev.summary)}</span></div>`;
   }
 
   // Birthdays and anniversaries: all-day, yearly, with an age/years count.
@@ -3535,7 +3626,7 @@ class HomeCalendarCard extends HTMLElement {
   _holidaysOn(day) { return this._onDay(day).filter((ev) => this._isBanner(ev)); }
 
   _holidayTags(day) {
-    return this._holidaysOn(day).map((ev) => `<span class="hol" style="--c:${esc(ev.cal.color)}" data-action="open-event" data-id="${ev.id}">
+    return this._holidaysOn(day).map((ev) => `<span class="hol" style="${this._evVars(ev)}" data-action="open-event" data-id="${ev.id}">
       <ha-icon icon="${esc((ev.tagged || ev.ruleIcon || ev.private ? this._typeIcon(ev) : ev.cal.icon) || "mdi:party-popper")}"></ha-icon>${esc(ev.summary)}</span>`).join("");
   }
 
@@ -3552,8 +3643,7 @@ class HomeCalendarCard extends HTMLElement {
     const cache = {};
     const look = (ent) => {
       if (!cache[ent]) {
-        cache[ent] = this._hass.callApi("GET",
-          `calendars/${ent}?start=${encodeURIComponent(today.toISOString())}&end=${encodeURIComponent(end.toISOString())}`);
+        cache[ent] = this._calEvents(ent, today.toISOString(), end.toISOString());
       }
       return cache[ent];
     };
@@ -3577,7 +3667,7 @@ class HomeCalendarCard extends HTMLElement {
         }
         const hit = evs.filter((ev) => ev.end > now && (!re || re.test(ev.real?.summary ?? ev.summary))).sort((a, b) => a.start - b.start)[0];
         if (!hit) return null;
-        return { name: cd.name || hit.summary, start: hit.start, end: hit.end, icon: cd.icon || this._typeIcon(hit) || undefined, color, fixed, ev: hit, kind: cd.type || this._cdKind(hit) };
+        return { name: cd.name || hit.summary, start: hit.start, end: hit.end, icon: cd.icon || this._typeIcon(hit) || undefined, color: cd.color || hit.color, fixed, ev: hit, kind: cd.type || this._cdKind(hit) };
       } catch (e) {
         console.warn("home-calendar-card: countdown failed", cd, e);
         return null;
@@ -3609,7 +3699,7 @@ class HomeCalendarCard extends HTMLElement {
         if (limit > 0 && perType[ev.type] >= limit) return;
         perType[ev.type] += 1;
         seen.add(k);
-        out.push({ name: ev.summary, start: ev.start, end: ev.end, icon: this._typeIcon(ev), color: ev.cal.color, ev, kind: this._cdKind(ev) });
+        out.push({ name: ev.summary, start: ev.start, end: ev.end, icon: this._typeIcon(ev), color: ev.color, ev, kind: this._cdKind(ev) });
       });
     }
     if (id !== this._cdId) return;
@@ -3992,9 +4082,8 @@ class HomeCalendarCard extends HTMLElement {
     const end = addDays(start, 3);
     const lists = await Promise.all(this._calendars.filter((c) => this._hass.states[c.entity] && !this._hidden.has(c.entity)).map(async (cal) => {
       try {
-        const res = await this._hass.callApi("GET",
-          `calendars/${cal.entity}?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`);
-        return (res || []).filter((e) => this._keep(e, cal)).map((e) => this._normalize(e, cal));
+        const res = await this._calEvents(cal.entity, start.toISOString(), end.toISOString());
+        return res.filter((e) => this._keep(e, cal)).map((e) => this._normalize(e, cal));
       } catch (e) { return []; }
     }));
     this._ambEvents = lists.flat().filter((ev) => !this._isBanner(ev)).sort((a, b) => a.start - b.start);
@@ -4005,7 +4094,7 @@ class HomeCalendarCard extends HTMLElement {
     const running = !ev.allDay && ev.start <= new Date() && ev.end > new Date();
     const when = ev.allDay ? (this._isBday(ev) ? this._yearlyLabel(ev, true) : this._t("all_day")) : running ? this._t("now") : this._time(ev.start);
     const icon = this._typeIcon(ev);
-    return `<div class="amb-ev" style="--c:${esc(ev.cal.color)}"><span class="amb-ev-day">${esc(dayLabel)}</span>
+    return `<div class="amb-ev" style="${this._evVars(ev)}"><span class="amb-ev-day">${esc(dayLabel)}</span>
       <span class="amb-ev-when">${esc(when)}</span>${icon ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : `<span class="amb-dot"></span>`}
       <span class="amb-ev-title">${esc(ev.summary)}</span></div>`;
   }
@@ -4609,7 +4698,7 @@ class HomeCalendarCard extends HTMLElement {
     const label = bday ? this._yearlyLabel(ev) : this._timeLabel(ev, day);
     const c = this._config;
     const tpos = ["left", "right"].includes(c.event_time_position) ? c.event_time_position : "above";
-    return `<div class="ev tpos-${tpos} ${live ? "live" : ""} ${past ? "past" : ""} ${bday ? "bday" : ""}" style="--c:${esc(ev.cal.color)}" data-action="open-event" data-id="${ev.id}">
+    return `<div class="ev tpos-${tpos} ${live ? "live" : ""} ${past ? "past" : ""} ${bday ? "bday" : ""}" style="${this._evVars(ev)}" data-action="open-event" data-id="${ev.id}">
       <div class="bar"></div>
       <div class="ev-body">
         <div class="ev-time">${live ? `<span class="pulse"></span>${esc(this._t("now"))} · ` : ""}${esc(label)}</div>
@@ -4717,8 +4806,8 @@ class HomeCalendarCard extends HTMLElement {
           ${this._wxBadge(d, true)}
         </button>
         ${wb.lanes ? `<div class="wlanes"></div>` : ""}
-        <div class="wevs">${this._holidaysOn(d).map((ev) => `<div class="whol${copy(ev)}" style="--c:${esc(ev.cal.color)}" data-action="open-event" data-id="${ev.id}">${esc(ev.summary)}</div>`).join("")}${evs.map((ev) => `
-          <div class="wev ${ev.allDay ? "allday" : ""} ${this._isBday(ev) ? "bday" : ""} ${ev.end <= new Date() ? "past" : ""}${copy(ev)}" style="--c:${esc(ev.cal.color)}" data-action="open-event" data-id="${ev.id}">
+        <div class="wevs">${this._holidaysOn(d).map((ev) => `<div class="whol${copy(ev)}" style="${this._evVars(ev)}" data-action="open-event" data-id="${ev.id}">${esc(ev.summary)}</div>`).join("")}${evs.map((ev) => `
+          <div class="wev ${ev.allDay ? "allday" : ""} ${this._isBday(ev) ? "bday" : ""} ${ev.end <= new Date() ? "past" : ""}${copy(ev)}" style="${this._evVars(ev)}" data-action="open-event" data-id="${ev.id}">
             <div class="t"><span class="short">${esc(this._isBday(ev) ? this._yearlyLabel(ev, true) : this._shortLabel(ev, d))}</span><span class="full">${esc(this._isBday(ev) ? this._yearlyLabel(ev) : this._timeLabel(ev, d))}</span></div><div class="s">${this._typeIcon(ev) ? `<ha-icon icon="${esc(this._typeIcon(ev))}"></ha-icon>` : ""}${esc(ev.summary)}</div>
           </div>`).join("")}</div>
       </div>`;
@@ -4809,7 +4898,7 @@ class HomeCalendarCard extends HTMLElement {
           let h = Math.max(0, pct(Math.min(Math.max(it.em, h0 * 60), h1 * 60)) - top);
           if (h === 0 && top >= 100) top = 100 - 100 / (h1 - h0) / 2; // spill-over after the hours: a chip at the bottom
           const tiny = it.em - it.sm < 40 || h < 100 / (h1 - h0) * 0.6; // short or pinned: one line
-          return `<div class="tlev ${ev.end <= now ? "past" : ""} ${tiny ? "tiny" : ""}" style="--c:${esc(ev.cal.color)};top:${top}%;height:${h}%;left:${(it.k / it.n) * 100}%;width:${100 / it.n}%" data-action="open-event" data-id="${ev.id}" title="${esc(`${ev.summary} · ${this._whenText(ev)}`)}">
+          return `<div class="tlev ${ev.end <= now ? "past" : ""} ${tiny ? "tiny" : ""}" style="${this._evVars(ev)};top:${top}%;height:${h}%;left:${(it.k / it.n) * 100}%;width:${100 / it.n}%" data-action="open-event" data-id="${ev.id}" title="${esc(`${ev.summary} · ${this._whenText(ev)}`)}">
             <div class="tlt">${esc(this._time(ev.start < d ? d : ev.start))}${tiny ? "" : ` – ${esc(this._time(ev.end))}`}</div><div class="tls">${this._typeIcon(ev) ? `<ha-icon icon="${esc(this._typeIcon(ev))}"></ha-icon>` : ""}${esc(ev.summary)}</div>
           </div>`;
         }).join("")}
@@ -4842,7 +4931,7 @@ class HomeCalendarCard extends HTMLElement {
           .sort((x, y) => x.start - y.start || (y.end - y.start) - (x.end - x.start) || x.summary.localeCompare(y.summary));
         const segs = evs.slice(0, 3).map((ev) => {
           const first = sameDay(ev.start, d) || day === 1 || ev.start < d && sameDay(d, start);
-          return `<span class="yseg ${first ? "first" : ""}" style="--c:${esc(ev.cal.color)}" data-action="open-event" data-id="${ev.id}" title="${esc(ev.summary)}">${first && evs.length < 3 ? esc(ev.summary) : ""}</span>`;
+          return `<span class="yseg ${first ? "first" : ""}" style="${this._evVars(ev)}" data-action="open-event" data-id="${ev.id}" title="${esc(ev.summary)}">${first && evs.length < 3 ? esc(ev.summary) : ""}</span>`;
         }).join("");
         out += `<div class="ycell ${we ? "we" : ""} ${k === today ? "today" : ""} ${evs.length ? "has" : ""}" style="grid-column:${mi + 1};grid-row:${day + 1}" data-action="open-day" data-date="${k}">
           <span class="yd">${day}</span><span class="yw">${esc(wd.format(d).replace(/\.$/, "").slice(0, 2))}</span>
@@ -4914,7 +5003,7 @@ class HomeCalendarCard extends HTMLElement {
     const writable = new Set(this._writable().map((c) => c.entity));
     const wd = this._fmt({ weekday: "short" });
     const mo = this._fmt({ month: "short" });
-    const evHtml = (ev, d) => `<div class="wev ${ev.allDay ? "allday" : ""} ${this._isBday(ev) ? "bday" : ""} ${ev.end <= new Date() ? "past" : ""}" style="--c:${esc(ev.cal.color)}" data-action="open-event" data-id="${ev.id}" title="${esc(ev.summary)}">
+    const evHtml = (ev, d) => `<div class="wev ${ev.allDay ? "allday" : ""} ${this._isBday(ev) ? "bday" : ""} ${ev.end <= new Date() ? "past" : ""}" style="${this._evVars(ev)}" data-action="open-event" data-id="${ev.id}" title="${esc(ev.summary)}">
         <div class="t">${esc(this._isBday(ev) ? this._yearlyLabel(ev, true) : this._shortLabel(ev, d))}</div><div class="s">${this._typeIcon(ev) ? `<ha-icon icon="${esc(this._typeIcon(ev))}"></ha-icon>` : ""}${esc(this._plannerTitle(ev))}</div>
       </div>`;
     const { days } = this._range();
@@ -4935,7 +5024,7 @@ class HomeCalendarCard extends HTMLElement {
       const hol = this._holidaysOn(d)[0];
       const shared = evs.filter((ev) => !colSet.has(ev.cal));
       const rowCls = `${k === today ? "is-today" : ""} ${[0, 6].includes(d.getDay()) ? "wkend" : ""} ${hol ? "has-hol" : ""}`;
-      out += `<div class="pday ${rowCls}" style="grid-area:${i + 2} / 1;${hol ? `--hol:${esc(hol.cal.color)}` : ""}">
+      out += `<div class="pday ${rowCls}" style="grid-area:${i + 2} / 1;${hol ? `--hol:${esc(hol.color)}` : ""}">
         <button class="pdate" data-action="open-day" data-date="${k}"><span class="wd">${esc(wd.format(d))}</span><span class="dn">${d.getDate()}</span><span class="mo">${esc(mo.format(d))}</span></button>
         ${this._wxBadge(d, true)}
         ${this._holidayTags(d) ? `<div class="phols">${this._holidayTags(d)}</div>` : ""}
@@ -4949,7 +5038,7 @@ class HomeCalendarCard extends HTMLElement {
         const lanesHere = pBars[ci].bars.filter((b) => b.a <= i && b.b >= i).length ? pBars[ci].lanes : 0;
         const target = c.members.find((m) => writable.has(m.entity)); // a group column adds to its first writable member
         const add = canAdd && !!target;
-        return `<div class="pcell ${rowCls}" style="grid-area:${i + 2} / ${ci + 2};--c:${esc(c.color)};--pl:${lanesHere}${hol ? `;--hol:${esc(hol.cal.color)}` : ""}" ${add ? `data-action="add-for" data-entity="${esc(target.entity)}" data-date="${k}" title="${esc(this._t("pl_add", { n: c.group || this._calName(target) }))}"` : ""}>
+        return `<div class="pcell ${rowCls}" style="grid-area:${i + 2} / ${ci + 2};--c:${esc(c.color)};--pl:${lanesHere}${hol ? `;--hol:${esc(hol.color)}` : ""}" ${add ? `data-action="add-for" data-entity="${esc(target.entity)}" data-date="${k}" title="${esc(this._t("pl_add", { n: c.group || this._calName(target) }))}"` : ""}>
           ${mine.map((ev) => evHtml(ev, d)).join("")}${add ? `<span class="padd"><ha-icon icon="mdi:plus"></ha-icon></span>` : ""}
         </div>`;
       }).join("");
@@ -4998,14 +5087,14 @@ class HomeCalendarCard extends HTMLElement {
       const maxEv = Math.max(1, max - Math.max(0, holLabels.length - 1));
       const more = evs.length - maxEv;
       // the day tint is shared between up to 3 holiday colours
-      const tints = [...new Set(hols.map((ev) => ev.cal.color))].slice(0, 3);
+      const tints = [...new Set(hols.map((ev) => ev.color))].slice(0, 3);
       const tintCss = tints.length > 1 ? `--holbg:linear-gradient(135deg, ${tints.map((col, k) => `color-mix(in srgb, ${esc(col)} 14%, transparent) ${(k * 100) / tints.length}% ${((k + 1) * 100) / tints.length}%`).join(", ")});` : "";
-      out += `<div class="mcell ${!this._monthWeeks() && d.getMonth() !== month ? "other" : ""} ${dayKey(d) === today ? "is-today" : ""} ${list && dayKey(d) === this._mSelKey() ? "msel" : ""} ${hol ? "has-hol" : ""} ${tintCss ? "multi-hol" : ""}" style="grid-area:${r} / ${c};${hol ? `--hol:${esc(hol.cal.color)};` : ""}${tintCss}" data-action="open-day" data-date="${dayKey(d)}">
+      out += `<div class="mcell ${!this._monthWeeks() && d.getMonth() !== month ? "other" : ""} ${dayKey(d) === today ? "is-today" : ""} ${list && dayKey(d) === this._mSelKey() ? "msel" : ""} ${hol ? "has-hol" : ""} ${tintCss ? "multi-hol" : ""}" style="grid-area:${r} / ${c};${hol ? `--hol:${esc(hol.color)};` : ""}${tintCss}" data-action="open-day" data-date="${dayKey(d)}">
         <div class="mtop"><span class="mdn">${d.getDate()}</span>${f ? `<span class="mwx"><ha-icon icon="${wxIcon(f.condition)}" style="color:${wxColor(f.condition)}"></ha-icon><b>${round(f.temperature)}°</b></span>` : ""}</div>
         ${rowBars.lanes ? `<div class="mlanes" style="--lanes:${rowBars.lanes}"></div>` : ""}
-        ${holLabels.map((ev) => `<div class="mhol" style="--c:${esc(ev.cal.color)}" data-action="open-event" data-id="${ev.id}" title="${esc(ev.summary)}">${esc(ev.summary)}</div>`).join("")}
+        ${holLabels.map((ev) => `<div class="mhol" style="${this._evVars(ev)}" data-action="open-event" data-id="${ev.id}" title="${esc(ev.summary)}">${esc(ev.summary)}</div>`).join("")}
         <div class="mevs">${evs.slice(0, maxEv).map((ev) => `
-          <div class="mev ${ev.allDay && !this._isBday(ev) ? "allday" : ""}" style="--c:${esc(ev.cal.color)}" data-action="open-event" data-id="${ev.id}" title="${esc(ev.summary)}">
+          <div class="mev ${ev.allDay && !this._isBday(ev) ? "allday" : ""}" style="${this._evVars(ev)}" data-action="open-event" data-id="${ev.id}" title="${esc(ev.summary)}">
             ${this._typeIcon(ev) ? `<ha-icon class="mcake" icon="${esc(this._typeIcon(ev))}"></ha-icon>` : `<span class="mdot"></span>`}${this._config.month_show_time && !ev.allDay && sameDay(ev.start, d) ? `<span class="mtime">${esc(this._time(ev.start))}</span>` : ""}<span class="mtxt">${esc(ev.summary)}</span>
           </div>`).join("")}
           ${more > 0 ? `<div class="more">+${more}</div>` : ""}</div>
@@ -5067,13 +5156,13 @@ class HomeCalendarCard extends HTMLElement {
     const f = this._forecast[dayKey(ev.start)];
     const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.location)}`;
     this._openDialog(`
-      <div class="dlg-head" style="--c:${esc(ev.cal.color)}">
+      <div class="dlg-head" style="${this._evVars(ev)}">
         <span class="dlg-dot"></span><div class="dlg-title">${esc(ev.summary)}</div>
         <button class="icon" data-action="close" title="${esc(this._t("close"))}"><ha-icon icon="mdi:close"></ha-icon></button>
       </div>
       <div class="dlg-body">
         <div class="row"><ha-icon icon="mdi:clock-outline"></ha-icon><div>${esc(this._whenText(ev))}${ev.age ? `<div class="muted">${this._ty(ev).style === "anniversary" ? `${esc(this._n().anniv(ev.age))} 💍` : `${esc(this._n().turns(ev.age))} 🎂`}</div>` : ""}${ev.rrule || ev.recurrence_id ? `<div class="muted">${esc(this._t("repeating"))}</div>` : ""}</div></div>
-        ${ev.type !== "standard" ? `<div class="row"><ha-icon icon="${esc(this._typeIcon(ev) || "mdi:tag-outline")}" style="color:${esc(ev.cal.color)}"></ha-icon><div>${esc(this._typeName(this._ty(ev)))}</div></div>` : ""}
+        ${ev.type !== "standard" ? `<div class="row"><ha-icon icon="${esc(this._typeIcon(ev) || "mdi:tag-outline")}" style="color:${esc(ev.color)}"></ha-icon><div>${esc(this._typeName(this._ty(ev)))}</div></div>` : ""}
         ${ev.location ? `<div class="row"><ha-icon icon="mdi:map-marker-outline"></ha-icon><a href="${mapUrl}" target="_blank" rel="noopener">${esc(ev.location)}</a></div>` : ""}
         <div class="row"><ha-icon icon="mdi:calendar-blank-outline"></ha-icon><div class="cal-line">${this._avatar(ev.cal, "sm") || `<span class="cal-dot" style="--c:${esc(ev.cal.color)}"></span>`}${esc(this._calName(ev.cal))}</div></div>
         ${(() => {
@@ -5864,12 +5953,12 @@ ha-icon { --mdc-icon-size: 18px; display: inline-flex; flex: none; }
 .ev.bday { background: linear-gradient(90deg, color-mix(in srgb, var(--c) 20%, transparent), color-mix(in srgb, var(--c) 5%, transparent)); }
 .ev-title ha-icon, .wev .s ha-icon { --mdc-icon-size: 16px; color: var(--c); margin-right: 5px; vertical-align: -3px; display: inline-block; }
 .wev .s ha-icon { --mdc-icon-size: 13px; margin-right: 3px; }
-.wev.allday .s ha-icon { color: #fff; }
+.wev.allday .s ha-icon { color: var(--ct, #fff); }
 .whol { font-size: .66rem; font-weight: 700; text-align: center; padding: 3px 4px; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   background: color-mix(in srgb, var(--c) 18%, transparent); color: color-mix(in srgb, var(--c) 70%, var(--hcc-text)); }
 /* multi-day bars (#16) */
 .mbar, .wbar, .pbar { box-sizing: border-box; display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; cursor: pointer; z-index: 2;
-  background: var(--c); color: #fff; font-weight: 700; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  background: var(--c); color: var(--ct, #fff); font-weight: 700; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 .mbar span, .wbar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mbar.ban, .wbar.ban, .pbar.ban { background: color-mix(in srgb, var(--c) 28%, var(--hcc-bg)); color: color-mix(in srgb, var(--c) 70%, var(--hcc-text)); box-shadow: none; }
 .mbar.past, .wbar.past, .pbar.past { opacity: .55; }
@@ -5974,7 +6063,7 @@ ha-icon { --mdc-icon-size: 18px; display: inline-flex; flex: none; }
 .wevs { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .wev { border-left: 3px solid var(--c); background: color-mix(in srgb, var(--c) 15%, var(--hcc-bg)); border-radius: 4px 8px 8px 4px; padding: 4px 6px; cursor: pointer; font-size: .76rem; min-width: 0; }
 .wev:hover { background: color-mix(in srgb, var(--c) 25%, var(--hcc-bg)); }
-.wev.allday { background: var(--c); color: #fff; border-left-color: transparent; }
+.wev.allday { background: var(--c); color: var(--ct, #fff); border-left-color: transparent; }
 .wev .t { color: var(--hcc-muted); font-size: .68rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wev.allday .t { color: rgba(255,255,255,.85); }
 .wev .t .full { display: none; }
@@ -5997,7 +6086,7 @@ ha-icon { --mdc-icon-size: 18px; display: inline-flex; flex: none; }
 .mev:hover { background: color-mix(in srgb, var(--c) 18%, transparent); }
 .mtxt { overflow: hidden; text-overflow: ellipsis; }
 .mdot { width: 6px; height: 6px; border-radius: 50%; background: var(--c); flex: none; }
-.mev.allday { background: var(--c); color: #fff; }
+.mev.allday { background: var(--c); color: var(--ct, #fff); }
 .mev .mtime { flex: none; opacity: .7; font-variant-numeric: tabular-nums; }
 .mev.allday .mdot { display: none; }
 .more { font-size: .68rem; color: var(--hcc-muted); font-weight: 700; padding-left: 4px; }
@@ -6167,7 +6256,7 @@ dialog[open] { display: flex; flex-direction: column; animation: pop .18s ease-o
 .yd { flex: none; width: 1.5em; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .yw { flex: none; width: 1.7em; color: var(--hcc-muted); text-transform: capitalize; }
 .ysegs { display: flex; flex: 1 1 auto; min-width: 0; align-self: stretch; gap: 2px; padding: 2px 0; }
-.yseg { flex: 1 1 0; min-width: 0; border-radius: 3px; background: var(--c); color: #fff; font-size: .68rem; font-weight: 600; line-height: 1.5; padding: 0 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.yseg { flex: 1 1 0; min-width: 0; border-radius: 3px; background: var(--c); color: var(--ct, #fff); font-size: .68rem; font-weight: 600; line-height: 1.5; padding: 0 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .ymore { flex: none; font-size: .65rem; color: var(--hcc-muted); align-self: center; }
 @container (max-width: 700px) { .year { overflow-x: auto; min-width: 0; } .year { grid-template-columns: repeat(12, minmax(64px, 1fr)); } }
 .multi-tg { margin-left: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--hcc-line);
@@ -6244,7 +6333,7 @@ textarea.inp { resize: vertical; }
   background-image: linear-gradient(45deg, transparent 50%, var(--hcc-muted) 50%), linear-gradient(135deg, var(--hcc-muted) 50%, transparent 50%);
   background-position: calc(100% - 17px) 55%, calc(100% - 12px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
 .sel-wrap select option { background: var(--hcc-bg); color: var(--hcc-text); }
-.mev.allday .mcake { color: #fff; }
+.mev.allday .mcake { color: var(--ct, #fff); }
 .f-wx { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--hcc-muted); padding: 8px 12px; border-radius: 12px; background: var(--hcc-soft); }
 .f-wx:empty { display: none; }
 .f-wx ha-icon { --mdc-icon-size: 22px; }
@@ -6324,6 +6413,25 @@ dialog { zoom: var(--hcc-zoom, 1); }
 :host([layout="fullscreen"]) ha-card {
   position: fixed; inset: 0; z-index: 7; width: 100vw; height: 100dvh; border-radius: 0; border: none; box-shadow: none; }
 :host([layout="fill"]) ha-card, :host([layout="fullscreen"]) ha-card { box-sizing: border-box; padding: 0; overflow: hidden; }
+/* Pastel theme: solid pastel cards with dark text. --pf is the card fill, mixed from the event or calendar colour. */
+:host([data-theme="pastel"]) { --pf-mix: 42%; }
+:host([data-theme="pastel"]) :is(.ev, .wev, .mev, .mbar, .wbar, .pbar, .tlev, .tlbar, .yseg, .whol, .mhol, .chips .chip) {
+  --pf: color-mix(in srgb, var(--c) var(--pf-mix), #fff); }
+:host([data-theme="pastel"]) :is(.ev, .wev, .wev.allday, .mev, .mev.allday, .mbar, .wbar, .pbar, .yseg, .whol, .tlbar) {
+  background: var(--pf); color: var(--hcc-text); border-left-color: transparent; box-shadow: none; }
+:host([data-theme="pastel"]) :is(.ev, .wev, .mev):hover { background: color-mix(in srgb, var(--c) 55%, #fff); }
+:host([data-theme="pastel"]) :is(.mbar, .wbar, .pbar).ban { background: color-mix(in srgb, var(--c) 25%, #fff); }
+:host([data-theme="pastel"]) .ev { border-radius: 12px; margin-bottom: 6px; }
+:host([data-theme="pastel"]) :is(.wev, .tlbar) { border-radius: 10px; padding: 6px 8px; font-weight: 500; }
+:host([data-theme="pastel"]) .mev { border-radius: 6px; padding: 1px 6px; margin-bottom: 2px; }
+:host([data-theme="pastel"]) :is(.mbar, .wbar, .pbar) { border-radius: 8px; font-weight: 600; }
+:host([data-theme="pastel"]) .tlev::before { background: var(--pf); border-left: 0; border-radius: 10px; }
+:host([data-theme="pastel"]) :is(.ev-time, .wev .t, .tlev .tlt) { color: color-mix(in srgb, var(--hcc-text) 62%, transparent); }
+:host([data-theme="pastel"]) :is(.ev-title, .wev .s, .tlev .tls) { font-weight: 500; color: var(--hcc-text); }
+:host([data-theme="pastel"]) :is(.wev.allday .s ha-icon, .mev.allday .mcake) { color: var(--hcc-text); }
+:host([data-theme="pastel"]) .mhol { border-left: 0; border-radius: 6px; background: var(--pf); color: var(--hcc-text); padding: 0 6px; }
+:host([data-theme="pastel"]) .chips .chip:not(.off) { background: var(--pf); border-color: transparent; color: var(--hcc-text); border-radius: 10px; padding: 6px 14px 6px 8px; }
+:host([data-theme="pastel"]) .chips .chip.off { border-radius: 10px; padding: 6px 14px 6px 8px; }
 :host([layout="fill"]) .inner, :host([layout="fullscreen"]) .inner {
   height: 100%; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
 :host([layout="fill"]) .wrap, :host([layout="fullscreen"]) .wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -6556,12 +6664,12 @@ const NIGHT_DEFAULTS = { enabled: false, style: "clock", start: "22:00", end: "0
 const SAVER_DEFAULTS = { enabled: false, after: 5, interval: 20, shuffle: true, show_info: true };
 const TRAVEL_DEFAULTS = { enabled: false, origin: "zone.home", region: "auto", vehicle_type: "car", hours_ahead: 12, avoid_toll_roads: false, avoid_ferries: false, geocode: false };
 // editor defaults that are not written to YAML until changed
-const LOOK_DEFAULTS = { countdown_style: "cards", countdown_size: 100, event_size: 100, month_mobile: "list", show_clock: false, clock_seconds: true,
+const LOOK_DEFAULTS = { use_event_colors: true, countdown_style: "cards", countdown_size: 100, event_size: 100, month_mobile: "list", show_clock: false, clock_seconds: true,
   clock_format: "auto", show_view_selector: true, show_date_navigation: true, show_refresh_button: true, calendar_sync_minutes: 0, week_style: "list", week_hour_start: 7, week_hour_end: 22, show_year_view: true, year_start: "january", event_time_position: "above", show_event_location: true,
   show_event_calendar: true, multiday_bars: true, agenda_multiday: "every", todo_show_empty: true, planner_days: 7, planner_start: "week", month_start: "week", week_start: "week", agenda_date: "both" };
 const GENERAL_KEYS = ["title", "language", "weather_entity", "todo_entity", "todo_title", "todo_position", "todo_autohide",
   "todo_lists", "todo_group_by", "todo_show_empty", "todo_days_ahead", "todo_calendar", "todo_show_completed", "todo_completed_days",
-  "show_countdowns", "countdown_style", "countdown_size", "event_size", "show_calendar_chips", "month_mobile", "month_show_time",
+  "show_countdowns", "countdown_style", "countdown_size", "event_size", "show_calendar_chips", "month_mobile", "month_show_time", "use_event_colors",
   "sections", "show_view_selector", "show_date_navigation", "show_refresh_button", "calendar_sync_minutes", "agenda_date", "agenda_multiday", "event_time_position", "show_event_location", "show_event_calendar",
   "show_clock", "clock_seconds", "clock_format",
   "default_view", "days_to_show", "show_week_numbers", "multiday_bars", "planner_days", "planner_start", "month_weeks", "month_start", "week_start", "week_style", "week_hour_start", "week_hour_end", "show_year_view", "year_start", "first_day_of_week", "time_format", "layout", "keep_awake", "show_header", "allow_add",
@@ -6624,6 +6732,7 @@ const generalSchema = (t, hasGrid = false) => {
       { name: "countdown_size", selector: { number: { min: 50, max: 150, step: 5, mode: "slider", unit_of_measurement: "%" } } },
       { name: "event_size", selector: { number: { min: 80, max: 160, step: 5, mode: "slider", unit_of_measurement: "%" } } },
       { name: "month_show_time", selector: { boolean: {} } },
+      { name: "use_event_colors", selector: { boolean: {} } },
       { name: "month_mobile", selector: { select: { mode: "dropdown", options: [o("list", "o_mm_list"), o("text", "o_mm_text"), o("both", "o_mm_both"), o("dots", "o_mm_dots")] } } },
       { type: "grid", name: "", schema: [
         { name: "show_clock", selector: { boolean: {} } },
@@ -7784,7 +7893,7 @@ class HomeCalendarCardEditor extends HTMLElement {
       night_mode: { ...NIGHT_DEFAULTS, ...this._objCfg(this._config.night_mode) },
       travel_time: { ...TRAVEL_DEFAULTS, ...(this._config.travel_time ? { enabled: true } : {}), ...this._objCfg(this._config.travel_time) },
       screensaver: { ...SAVER_DEFAULTS, ...this._objCfg(this._config.screensaver) },
-    }, (s) => this._t(`l_${s.name}`), (s) => (s.name === "media" ? this._t("ed_media_help") : s.name === "origin" ? this._t("ed_origin_help") : s.name === "geocode" ? this._t("ed_geocode_help") : s.name === "todo_lists" ? this._t("ed_todo_lists_help") : undefined));
+    }, (s) => this._t(`l_${s.name}`), (s) => (s.name === "media" ? this._t("ed_media_help") : s.name === "origin" ? this._t("ed_origin_help") : s.name === "geocode" ? this._t("ed_geocode_help") : s.name === "todo_lists" ? this._t("ed_todo_lists_help") : s.name === "use_event_colors" ? this._t("ed_event_colors_help") : undefined));
     gen.addEventListener("value-changed", (ev) => {
       ev.stopPropagation();
       gen.data = ev.detail.value;

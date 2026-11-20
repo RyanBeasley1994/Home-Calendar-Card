@@ -54,7 +54,8 @@ A clean, modern calendar card for Home Assistant. Shows your **Google**, **Apple
 - 🌍 Dates and times follow your HA language and 12/24-hour profile setting
 - ✅ **To-do lists** – a shared family list and/or each person's own list (e.g. from their phone), extra lists like shopping as tabs, grouped by person, optional due date, anyone can add, tick to complete (with Undo); updates live on every device
 - 🖥️ **Wall display mode** – fills the whole screen, stretches Month/Week to the full height, to-do list as a sidebar, auto-scales text for distance viewing and keeps the screen awake
-- 🎨 **5 colour themes** – Nordic, Sunset, Forest, Midnight and Graphite, or follow your HA theme (light and dark)
+- 🎨 **6 colour themes** – Nordic, Sunset, Forest, Pastel, Midnight and Graphite, or follow your HA theme (light and dark)
+- 🌈 **Google event colours** – each event in the colour picked for it in Google Calendar (with the *Google Calendar (event colours)* integration) – see *Google event colours*
 - 🛠️ **Visual editor** – theme picker, and a calendar list where you can rename each calendar, set its colour, link a person and choose its type
 - 🌙 **Night mode & screensaver** for always-on screens – a dim night clock on a schedule (wake by touch or motion sensor) and a family-photo slideshow with clock, weather and next event when idle
 - 🌍 **11 languages** – English, Polish, Spanish, German, French, Italian, Dutch, Hungarian, Portuguese (Brazil) and Serbian (Cyrillic and Latin); card and visual editor follow your Home Assistant language
@@ -202,7 +203,8 @@ max_height: 640px
 | `browser_fullscreen` | boolean | `false` | In `fullscreen`, the first tap also switches the browser to true full screen (hides the address bar) |
 | `todo_position` | `auto` \| `top` \| `bottom` \| `left` \| `right` | `auto` | Where the to-do list sits. `auto` = bottom for a normal card, right in fill/fullscreen |
 | `todo_autohide` | `false` \| `true` \| seconds | `false` | Fold the to-do list away into a slim bar/tab; tap to open; it folds again after this many seconds without use (`true` = 30) |
-| `theme` | `auto` \| `nordic` \| `sunset` \| `forest` \| `midnight` \| `graphite` | `auto` | Colour scheme – see *Themes* |
+| `theme` | `auto` \| `nordic` \| `sunset` \| `forest` \| `pastel` \| `midnight` \| `graphite` | `auto` | Colour scheme – see *Themes* |
+| `use_event_colors` | boolean | `true` | Show each event in its own Google Calendar colour when known, instead of the calendar colour – see *Google event colours* |
 | `language` | `auto` \| `en` \| `pl` \| `es` | `auto` | Card language – `auto` follows your Home Assistant profile |
 | `title` | string | – | Shown above the date in the header |
 | `default_view` | `agenda` \| `week` \| `month` \| `planner` \| `year` | `agenda` | View shown when the dashboard loads |
@@ -1121,6 +1123,7 @@ It ticks every second without redrawing the calendar, so it's light even on olde
 | `nordic` | Light, cool slate with a blue accent |
 | `sunset` | Warm cream with a coral accent |
 | `forest` | Soft sage with a deep green accent |
+| `pastel` | Clean white with solid pastel event cards and pastel person buttons – a family wall-display look |
 | `midnight` | Dark navy with a sky-blue accent |
 | `graphite` | Dark charcoal with an amber accent |
 
@@ -1129,6 +1132,48 @@ Each theme also has a matching calendar colour palette, used for any calendar wi
 ```yaml
 theme: midnight
 ```
+
+### Google event colours
+
+In Google Calendar you can give a single event its own colour (e.g. doctor = red, school = green, birthday = purple). Home Assistant's calendar API doesn't pass event colours on – its events only have a title, times, description and location – so the standard Google Calendar integration can't show them.
+
+The custom integration **[Google Calendar (event colours)](https://github.com/Jam3s97/ha-google-calendar-event-colors)** works around this. It replaces the built-in Google Calendar integration and splits a calendar into one calendar entity per event colour, each with its Google colour in a `color` attribute:
+
+| Entity | Events | `color` attribute |
+|---|---|---|
+| `calendar.family` | all of them (as before) | – |
+| `calendar.family_school` | the green ones | `#33b679` |
+| `calendar.family_doctor` | the red ones | `#d50000` |
+| `calendar.family_other` | events with no colour of their own | the calendar's colour |
+
+The card reads this automatically – **keep only `calendar.family` in the card** (no YAML changes):
+
+```yaml
+type: custom:home-calendar-card
+calendars:
+  - entity: calendar.family
+    color: "#10B981"   # still used for events without their own colour
+```
+
+For each calendar in the card, the card finds its colour entities (same entity ID followed by `_…`, with a `color` attribute), reads their events and colours the matching events of `calendar.family`. Change an event's colour in Google and it shows in the new colour after the next sync – even a colour you've never used before. You can also put a colour entity itself in the card (e.g. `calendar.family_doctor`); its events then all get its colour.
+
+Colour order: **the event's own Google colour → the calendar's `color` → the theme's automatic colour.** Events in the *Other* entity, and all events when the integration isn't installed, keep the calendar colour exactly as before.
+
+Event colours are used in every view (Agenda, Week, Month, Planner, Year, multi-day bars, event details, the screensaver and countdowns with `countdown_colors: calendar`). Text on solid-coloured events switches between dark and white so it stays readable, and on dark themes (Midnight, Graphite) very bright colours such as Banana are softened a little.
+
+To keep the calendar colours, turn **Use Google event colours** off in the visual editor (Appearance), or:
+
+```yaml
+use_event_colors: false
+```
+
+Setup:
+1. Install *Google Calendar (event colours)* from HACS (custom repository `https://github.com/Jam3s97/ha-google-calendar-event-colors`) and restart Home Assistant. It needs Home Assistant 2026.11 or newer and reuses your existing Google sign-in.
+2. Optional, but nicer entity names: in Google Calendar on the web, name the colours you use (colour menu → pencil).
+3. **Settings → Devices & services → Google Calendar → Configure** → tick the calendars under *Calendars to split by event colour*.
+4. Leave the card's `calendars:` as they are. Don't add the colour entities as well as their calendar, or events show twice.
+
+Limits: the card matches the colour entities by entity ID, so if you rename `calendar.family_doctor` to something that doesn't start with `calendar.family_`, add it to the card directly instead. Events that use the calendar's own default colour count as coloured when the integration gives that colour its own entity (rather than *Other*), so they show in Google's calendar colour. Each colour entity is one more request when the card refreshes.
 
 ### Visual editor
 
